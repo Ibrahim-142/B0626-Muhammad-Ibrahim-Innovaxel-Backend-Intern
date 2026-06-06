@@ -2,8 +2,7 @@ const EventService = require("../services/event.service");
 
 const createEvent = async (req, res) => {
   const result = await EventService.createEvent(req.body);
-    res.json({ success: true, data: events, message: "Events retrieved" });
-
+  res.json({ success: true, data: result, message: "Event created" });
 };
 
 const getEvents = async (req, res) => {
