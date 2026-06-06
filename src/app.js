@@ -1,17 +1,8 @@
 const express = require("express");
-
 const app = express();
 
-app.use(express.json());
-
 app.get("/", (req, res) => {
-  res.json({
-    message: "Event Registration API"
-  });
+  res.send("Server is running");
 });
 
-const PORT = 3000;
-
-app.listen(PORT, () => {
-  console.log(`Running on ${PORT}`);
-});
+module.exports = app;
