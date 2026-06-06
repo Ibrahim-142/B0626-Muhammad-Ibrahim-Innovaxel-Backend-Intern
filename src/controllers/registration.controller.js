@@ -1,16 +1,16 @@
 const RegService = require("../services/registration.service");
-const { success } = require("../utils/response.util");
 
 const register = async (req, res) => {
   const { userName, eventId } = req.body;
   const result = await RegService.registerUser(userName, eventId);
-  success(res, result, "Registered successfully");
+  res.json({ success: true, data: events, message: "Registration Success" });
 };
 
 const cancel = async (req, res) => {
   const { userName, eventId } = req.body;
   await RegService.cancelRegistration(userName, eventId);
-  success(res, null, "Cancelled successfully");
+  res.json({ success: true, data: events, message: "Registration Cancelled" });
+  
 };
 
 module.exports = { register, cancel };
