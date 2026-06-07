@@ -45,11 +45,15 @@ const RegistrationModel = {
       db.run(
         `UPDATE registrations 
          SET status='cancelled'
-         WHERE userName=? AND eventId=?`,
+         WHERE userName=? AND eventId=? AND status='active'`,
         [userName, eventId],
         function (err) {
           if (err) reject(err);
-          else resolve(true);
+          else if (this.changes === 0) {
+            reject(new Error("User is not registered for this event"));
+          } else {
+            resolve(true);
+          }
         }
       );
     }),
