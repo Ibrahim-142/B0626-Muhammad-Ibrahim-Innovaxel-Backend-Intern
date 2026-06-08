@@ -6,9 +6,7 @@ const errorHandler = require('./middlewares/error.middleware');
 const app = express();
 
 app.use(express.json());
-app.use('/api/events', eventRoutes);
 app.use('/events', eventRoutes);
-app.use('/api/registrations', registrationRoutes);
 app.use('/registrations', registrationRoutes);
 
 // Error handling middleware (must be last)
