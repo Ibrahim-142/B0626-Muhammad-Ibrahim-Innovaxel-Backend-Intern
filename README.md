@@ -1,13 +1,193 @@
-# Event Registration System - Request Lifecycle & Architecture
+# Event Registration System API
 
-Welcome! This guide is designed to help beginners understand how data flows through this Node.js, Express, and SQLite backend application.
+A lightweight, robust, and highly concurrent Event Registration System backend built using **Node.js**, **Express**, and **SQLite**. 
+
+This system handles event creation, user registration, and cancellation, featuring built-in concurrency controls to guarantee that events cannot be overbooked under high-traffic parallel request scenarios.
 
 ---
 
-## The Request-Response Lifecycle at a Glance
+## 🚀 Key Features
 
-When a client (like a web browser or Postman) interacts with this backend, the request travels through a series of layers in a strict, logical sequence. Here is the visual path of a request:
+- **Event Management**: Create events with details like capacity limit (`totalSeats`) and date (`eventDate`).
+- **Advanced Sorting & Filtering**: Retrieve events sorted by date (`asc` / `desc`) and filtered by status (e.g., upcoming events only).
+- **Concurrency-Safe Registration**: Registers users for events atomically at the database layer to prevent overbooking.
+- **Clean Cancellation & Reactivation Flow**: Supports cancellation of active registrations and atomic reactivation.
+- **Strict Validation**: Request validation middlewares to sanitize input formats and enforce valid payload bounds.
+- **Standardized Error Handling**: Unified JSON error outputs with proper HTTP status codes.
 
+---
+
+## 🛠️ Tech Stack
+
+- **Runtime**: Node.js (CommonJS modules)
+- **Framework**: Express (v5.2.1)
+- **Database**: SQLite (using `sqlite3` for schema and queries)
+- **Development Tooling**: Nodemon for hot reloading
+- **Testing**: Native Node.js Test Runner (`node --test`)
+
+---
+
+## 📦 Getting Started
+
+### 1. Installation
+Clone or download the project files and install dependencies:
+```bash
+npm install
+```
+
+### 2. Run the Server
+Start the development server with hot-reload enabled:
+```bash
+npm run dev
+```
+By default, the server will start on port `3000` (or `PORT` environment variable if configured).
+
+### 3. Run Tests
+This project uses the native Node.js test runner. You can run all test suites (including concurrency and registration edge cases) using:
+```bash
+npm test
+```
+To run only the concurrency tests:
+```bash
+npm run test:concurrency
+```
+
+---
+
+## 🗂️ API Documentation
+
+### Event Endpoints
+
+#### 1. Create Event
+- **Endpoint**: `POST /events`
+- **Request Body**:
+  ```json
+  {
+    "name": "NodeJS Workshop",
+    "totalSeats": 50,
+    "eventDate": "2027-12-31T10:00:00Z"
+  }
+  ```
+- **Responses**:
+  - `200 OK`: Event created successfully.
+  - `400 Bad Request`: Missing fields, invalid types, negative/non-integer seats, past dates, or unexpected fields.
+  - `409 Conflict`: Event name already exists.
+
+#### 2. List All Events
+- **Endpoint**: `GET /events`
+- **Response**: Returns a full list of all events in the system.
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "name": "NodeJS Workshop",
+        "totalSeats": 50,
+        "eventDate": "2027-12-31T10:00:00Z"
+      }
+    ],
+    "message": "Events retrieved"
+  }
+  ```
+
+#### 3. Sort & Filter Events (New Route)
+- **Endpoint**: `GET /events/sort`
+- **Query Parameters**:
+  - `sort` (optional): `asc` (default) or `desc` to sort events chronologically by `eventDate`.
+  - `upcoming` (optional): Set to `true` to return only events where the `eventDate` is in the future relative to the system's current time.
+- **Example request**: `GET /events/sort?upcoming=true&sort=desc`
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "data": [
+      {
+        "id": 2,
+        "name": "Advanced React Masterclass",
+        "totalSeats": 20,
+        "eventDate": "2028-06-15T09:00:00Z"
+      },
+      {
+        "id": 1,
+        "name": "NodeJS Workshop",
+        "totalSeats": 50,
+        "eventDate": "2027-12-31T10:00:00Z"
+      }
+    ],
+    "message": "Events retrieved"
+  }
+  ```
+
+---
+
+### Registration Endpoints
+
+#### 1. Register User for Event
+- **Endpoint**: `POST /registrations/register`
+- **Request Body**:
+  ```json
+  {
+    "userName": "Alice",
+    "eventId": 1
+  }
+  ```
+- **Responses**:
+  - `200 OK`: Registered successfully.
+  - `400 Bad Request`: Invalid arguments, missing fields, or registration for a past event.
+  - `404 Not Found`: Event does not exist.
+  - `409 Conflict`: User already registered (with an active status) or event is full (seats capacity reached).
+
+#### 2. Cancel Registration
+- **Endpoint**: `POST /registrations/cancel`
+- **Request Body**:
+  ```json
+  {
+    "userName": "Alice",
+    "eventId": 1
+  }
+  ```
+- **Responses**:
+  - `200 OK`: Cancelled successfully.
+  - `400 Bad Request`: Registration not found or already cancelled.
+  - `404 Not Found`: Event not found.
+
+---
+
+## ⚡ Concurrency & Overbooking Prevention
+
+Traditional approaches fetch the current registration count and the event capacity in two separate database calls before deciding whether to register a user. Under high parallel request traffic (concurrency), this pattern creates **race conditions**, leading to overbooking (e.g., registering 6 people for a 5-seat event).
+
+This backend solves the concurrency issue by implementing **Atomic SQL Queries** in the SQLite database layer.
+
+### How it Works:
+1. **Atomic Insertion**:
+   When registering a user, we use a single query that conditionally inserts the row only if the limit is not exceeded:
+   ```sql
+   INSERT INTO registrations (userName, eventId, createdAt, status)
+   SELECT ?, ?, ?, 'active'
+   WHERE (SELECT COUNT(*) FROM registrations WHERE eventId = ? AND status = 'active') 
+         < (SELECT totalSeats FROM events WHERE id = ?)
+   ```
+2. **Atomic Reactivation**:
+   If a user has a cancelled registration and wants to register again, we update the status atomically with a check constraint:
+   ```sql
+   UPDATE registrations 
+   SET status='active', createdAt=?
+   WHERE userName=? AND eventId=? AND status='cancelled'
+     AND (SELECT COUNT(*) FROM registrations WHERE eventId = ? AND status='active') 
+         < (SELECT totalSeats FROM events WHERE id = ?)
+   ```
+
+Using this approach, SQLite handles the comparison lock inside a single write-cycle transaction, ensuring absolute consistency even with hundreds of concurrent requests.
+
+---
+
+## 🏗️ Request Lifecycle & Architecture
+
+The application adopts a **Separation of Concerns (SoC)** approach, grouping functionality into independent layers. 
+
+### Visual Request Flow:
 ```text
  Client (Request)
        │
@@ -46,65 +226,16 @@ When a client (like a web browser or Postman) interacts with this backend, the r
  │ Database │  (SQLite: db/sqlite.js)
  └────┬─────┘
       │
-      └──────► [Success Result] ──► Controller ──► Client (Response)
+      ├──────► [Success Result] ──► Controller ──► Client (Response)
       │
       └──────► [Error Thrown] ──► Error Middleware ──► Client (Response)
 ```
 
----
-
-## Step-by-Step Request Lifecycle
-
-Let’s trace exactly what happens when a client sends a request (for example: `POST /registrations/register` to sign up a user for an event).
-
-### Step 1: Entry Point (`server.js` & `src/app.js`)
-* **What happens:** The server starts up in [server.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/server.js) and listens on a port. The application setup is configured in [src/app.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/app.js).
-* **Role:** This is the reception desk of our application. Express parses incoming JSON data (`express.json()`) and forwards the request to the router based on the URL path.
-
-### Step 2: Routing (`src/routes/`)
-* **What happens:** Express looks at the URL path (e.g., `/registrations/register`) and matches it to the correct router.
-* **Role:** The routers (like [registration.routes.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/routes/registration.routes.js)) act as a map. They define which middleware and controllers should handle specific HTTP verbs (`GET`, `POST`, etc.).
-
-### Step 3: Middleware Validation (`src/middlewares/`)
-* **What happens:** Before the request reaches our main logic, validation middleware in [validate.middleware.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/middlewares/validate.middleware.js) intercepts it.
-* **Role:** This is the bouncer. It checks if the client sent the correct fields:
-  * Are required fields like `userName` and `eventId` present?
-  * Are they of the correct data types (string and integer)?
-  * Are values sanitized (trimmed of empty space)?
-* **Outcome:** If validation fails, the middleware returns a `400 Bad Request` response immediately, stopping the request from going further. If validation passes, `next()` is called, and it moves to the Controller.
-
-### Step 4: Controller Handler (`src/controllers/`)
-* **What happens:** The controller (like `register` in [registration.controller.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/controllers/registration.controller.js)) takes over.
-* **Role:** The controller is the traffic cop. It doesn't write database queries or perform complex checks itself. Its only job is to:
-  1. Extract parameters from the request (`req.body`).
-  2. Call the appropriate service function to do the heavy lifting.
-  3. Send a clean JSON response back to the client (`res.json()`) or catch errors and pass them to the global error handler (`next(error)`).
-
-### Step 5: Service Layer (`src/services/`)
-* **What happens:** The service (like `registerUser` in [registration.service.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/services/registration.service.js)) executes the business logic.
-* **Role:** This is the brain of the application. The service evaluates business rules:
-  * Does the event exist?
-  * Is the event in the future?
-  * Is the event already full? (preventing overbooking)
-* **Outcome:** It orchestrates reads and writes by talking to the Database Models.
-
-### Step 6: Model & Database Layer (`src/models/` & `src/db/`)
-* **What happens:** The models (like [registration.model.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/models/registration.model.js)) communicate directly with SQLite.
-* **Role:** This is the hands-on data worker. It encapsulates raw SQL queries (like `INSERT INTO registrations`, `SELECT COUNT(*)`, etc.). We use atomic queries (like `INSERT INTO ... SELECT ... WHERE count < totalSeats`) to ensure that multiple operations run concurrently without race conditions.
-
-### Step 7: Response & Error Handling (`src/middlewares/error.middleware.js`)
-* **What happens:** 
-  * **On Success:** The service returns data to the controller, which sends a `200 OK` status and a success message back to the client.
-  * **On Failure:** If a service check fails or a database constraint is hit (e.g. duplicate user registration), an error is thrown. The controller catches it and forwards it via `next(error)` to the global error handler in [error.middleware.js](file:///c:/Users/ibrah/OneDrive/Desktop/event-registration-system/src/middlewares/error.middleware.js).
-* **Role:** The error handler standardizes error messages. It logs details for the developer and responds to the client with appropriate HTTP status codes (like `409 Conflict`, `404 Not Found`, etc.) in a consistent JSON format.
-
----
-
-## Why Use This Multi-Layered Architecture?
-
-This design pattern is called **Separation of Concerns**. By breaking the application into layers, we achieve several major benefits:
-
-1. **Maintainability:** If we need to change how registrations are saved (e.g., swapping SQLite for MongoDB), we only modify the **Model** files. The Controllers, Routes, and Services remain completely untouched.
-2. **Reusability:** You can easily call service logic from another part of the system or run automated tests directly against services and models without spinning up Express.
-3. **Testability:** Having isolated layers makes it easy to write unit tests for validation, models, or concurrent flows separately.
-4. **Clarity:** Developers know exactly where to look for validation rules (Middlewares), endpoint structures (Routes), business restrictions (Services), and database interactions (Models).
+### Layer Roles:
+1. **Entry Point (`src/app.js`)**: Configures Express, mounts routes, and registers the global error-handler middleware.
+2. **Routes (`src/routes/`)**: Acts as a path resolver mapping request URIs and HTTP verbs to appropriate validators and controllers.
+3. **Middlewares (`src/middlewares/`)**: Intercepts requests to validate parameter data types, formats, and structural layouts before they hit controllers.
+4. **Controllers (`src/controllers/`)**: Extracts payloads from the request, routes calls to relevant service layers, and translates outcomes into structured JSON HTTP responses.
+5. **Services (`src/services/`)**: Orchestrates domain/business logic validation (e.g. validating date rules or checking existences).
+6. **Models (`src/models/`)**: Interfaces directly with SQLite, executing atomic SQL queries.
+7. **Error Handler (`src/middlewares/error.middleware.js`)**: Captures all bubbled runtime errors and formats them into uniform client-facing responses.
