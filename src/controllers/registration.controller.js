@@ -4,7 +4,7 @@ const register = async (req, res, next) => {
   try {
     const { userName, eventId } = req.body;
     const result = await RegService.registerUser(userName, eventId);
-    res.json({ success: true, data: result, message: "Registration Success" });
+    res.json({ success: true, message: "Registered successfully" });
   } catch (error) {
     next(error);
   }
@@ -14,7 +14,7 @@ const cancel = async (req, res, next) => {
   try {
     const { userName, eventId } = req.body;
     const result = await RegService.cancelRegistration(userName, eventId);
-    res.json({ success: true, data: result, message: "Registration Cancelled" });
+    res.json({ success: true, message: "Cancelled successfully" });
   } catch (error) {
     next(error);
   }

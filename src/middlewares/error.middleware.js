@@ -6,12 +6,16 @@ const errorHandler = (err, req, res, next) => {
   // Handle SQLite UNIQUE constraint errors
   if (err.message && err.message.includes("UNIQUE constraint failed")) {
     statusCode = 409;
-    const match = err.message.match(/UNIQUE constraint failed: (\w+)\.(\w+)/);
-    if (match) {
-      const table = match[1];
-      const field = match[2];
-      message = `A ${table} with this ${field} already exists. Please use a different ${field}.`;
-      details = { field, table };
+    if (err.message.includes("events.name")) {
+      message = "Event name already exists";
+    } else {
+      const match = err.message.match(/UNIQUE constraint failed: (\w+)\.(\w+)/);
+      if (match) {
+        const table = match[1];
+        const field = match[2];
+        message = `A ${table} with this ${field} already exists. Please use a different ${field}.`;
+        details = { field, table };
+      }
     }
   }
   // Handle SQLite NOT NULL constraint errors
@@ -55,20 +59,6 @@ const errorHandler = (err, req, res, next) => {
     message = "Validation failed: Please check your input fields.";
     details = err.details || {};
   }
-  // Handle JWT errors
-  else if (err.name === "JsonWebTokenError") {
-    statusCode = 401;
-    message = "Invalid authentication token. Please log in again.";
-  } else if (err.name === "TokenExpiredError") {
-    statusCode = 401;
-    message = "Your session has expired. Please log in again.";
-  }
-  // Handle authorization errors
-  else if (err.name === "AuthorizationError" || err.statusCode === 403) {
-    statusCode = 403;
-    message = "You do not have permission to access this resource.";
-  }
-
   // Log error for debugging
   console.error({
     timestamp: new Date().toISOString(),

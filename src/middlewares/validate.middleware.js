@@ -166,7 +166,7 @@ const validateRegistration = (req, res, next) => {
   if (!trimmedUserName) {
     return res.status(400).json({
       success: false,
-      message: "userName cannot be empty",
+      message: "User name cannot be empty",
     });
   }
 

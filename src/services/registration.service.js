@@ -1,34 +1,74 @@
 const Event = require("../models/event.model");
 const Registration = require("../models/registration.model");
-const eventLocks = new Map();
-
 const registerUser = async (userName, eventId) => {
-  while (eventLocks.get(eventId)) {
-    await new Promise((r) => setTimeout(r, 50));
+  const event = await Event.findById(eventId);
+  if (!event) {
+    const err = new Error("Event not found");
+    err.statusCode = 404;
+    throw err;
   }
 
-  eventLocks.set(eventId, true);
+  if (new Date(event.eventDate) <= new Date()) {
+    const err = new Error("Cannot register for a past event");
+    err.statusCode = 400;
+    throw err;
+  }
 
   try {
-    const event = await Event.findById(eventId);
-    if (!event) throw new Error("Event not found");
-
-    const already = await Registration.findActive(userName, eventId);
-    if (already) throw new Error("User already registered");
-
-    const count = await Registration.countActiveByEvent(eventId);
-    if (count >= event.totalSeats) {
-      throw new Error("Event is full");
+    const result = await Registration.createAtomic(userName, eventId);
+    if (result.changes === 0) {
+      const existing = await Registration.findByUserAndEvent(userName, eventId);
+      if (existing && existing.status === "active") {
+        const err = new Error("User already registered");
+        err.statusCode = 409;
+        throw err;
+      }
+      const err = new Error("Event is full");
+      err.statusCode = 409;
+      throw err;
     }
+    return { id: result.id };
+  } catch (err) {
+    if (err.message && err.message.includes("UNIQUE constraint failed")) {
+      const existing = await Registration.findByUserAndEvent(userName, eventId);
+      if (existing) {
+        if (existing.status === "active") {
+          const error = new Error("User already registered");
+          error.statusCode = 409;
+          throw error;
+        }
 
-    return await Registration.create(userName, eventId);
-  } finally {
-    eventLocks.set(eventId, false);
+        const updateResult = await Registration.activateAtomic(userName, eventId);
+        if (updateResult.changes === 0) {
+          const error = new Error("Event is full");
+          error.statusCode = 409;
+          throw error;
+        }
+        return { id: existing.id };
+      }
+    }
+    throw err;
   }
 };
 
 const cancelRegistration = async (userName, eventId) => {
-  return Registration.cancel(userName, eventId);
+  const event = await Event.findById(eventId);
+  if (!event) {
+    const err = new Error("Event not found");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  try {
+    return await Registration.cancel(userName, eventId);
+  } catch (err) {
+    if (err.message === "User is not registered for this event") {
+      const error = new Error("Registration not found");
+      error.statusCode = 400;
+      throw error;
+    }
+    throw err;
+  }
 };
 
 module.exports = { registerUser, cancelRegistration };

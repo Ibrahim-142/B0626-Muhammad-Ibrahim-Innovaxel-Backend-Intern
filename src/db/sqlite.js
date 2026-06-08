@@ -1,6 +1,7 @@
 const sqlite3 = require("sqlite3").verbose();
 
-const db = new sqlite3.Database("./database.sqlite");
+const dbPath = process.env.NODE_ENV === "test" ? ":memory:" : "./database.sqlite";
+const db = new sqlite3.Database(dbPath);
 
 const initDB = () => {
   return new Promise((resolve, reject) => {
