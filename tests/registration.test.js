@@ -496,3 +496,72 @@ test("23. Register With Empty User Name", async () => {
     message: "User name cannot be empty",
   });
 });
+
+// 24. Sort and Filter Events (GET /events/sort)
+test("24. Sort and Filter Events (GET /events/sort)", async () => {
+  // Clear events first
+  await runQuery("DELETE FROM registrations");
+  await runQuery("DELETE FROM events");
+
+  // Insert test events directly into SQLite (allowing past dates)
+  await runQuery(
+    "INSERT INTO events (name, totalSeats, eventDate) VALUES (?, ?, ?)",
+    ["Past Event", 5, "2020-05-15T10:00:00Z"]
+  );
+  await runQuery(
+    "INSERT INTO events (name, totalSeats, eventDate) VALUES (?, ?, ?)",
+    ["Future Event 1", 10, "2027-01-01T10:00:00Z"]
+  );
+  await runQuery(
+    "INSERT INTO events (name, totalSeats, eventDate) VALUES (?, ?, ?)",
+    ["Future Event 2", 15, "2028-01-01T10:00:00Z"]
+  );
+
+  // Test 1: Default sorting (ascending) and no filtering
+  {
+    const res = await fetch(`${baseUrl}/events/sort`);
+    const body = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.message, "Events retrieved");
+    assert.strictEqual(body.data.length, 3);
+    assert.strictEqual(body.data[0].name, "Past Event");
+    assert.strictEqual(body.data[1].name, "Future Event 1");
+    assert.strictEqual(body.data[2].name, "Future Event 2");
+  }
+
+  // Test 2: Descending sorting and no filtering
+  {
+    const res = await fetch(`${baseUrl}/events/sort?sort=desc`);
+    const body = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.data.length, 3);
+    assert.strictEqual(body.data[0].name, "Future Event 2");
+    assert.strictEqual(body.data[1].name, "Future Event 1");
+    assert.strictEqual(body.data[2].name, "Past Event");
+  }
+
+  // Test 3: Upcoming events only (ascending default)
+  {
+    const res = await fetch(`${baseUrl}/events/sort?upcoming=true`);
+    const body = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.data.length, 2);
+    assert.strictEqual(body.data[0].name, "Future Event 1");
+    assert.strictEqual(body.data[1].name, "Future Event 2");
+  }
+
+  // Test 4: Upcoming events only (descending)
+  {
+    const res = await fetch(`${baseUrl}/events/sort?upcoming=true&sort=desc`);
+    const body = await res.json();
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(body.success, true);
+    assert.strictEqual(body.data.length, 2);
+    assert.strictEqual(body.data[0].name, "Future Event 2");
+    assert.strictEqual(body.data[1].name, "Future Event 1");
+  }
+});
+
