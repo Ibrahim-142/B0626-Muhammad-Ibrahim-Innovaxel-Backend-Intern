@@ -1,41 +1,16 @@
 const { db } = require("../db/sqlite");
 
 const RegistrationModel = {
-  create: (userName, eventId) =>
+  createAtomic: (userName, eventId) =>
     new Promise((resolve, reject) => {
       db.run(
         `INSERT INTO registrations (userName, eventId, createdAt, status)
-         VALUES (?, ?, ?, 'active')`,
-        [userName, eventId, new Date().toISOString()],
+         SELECT ?, ?, ?, 'active'
+         WHERE (SELECT COUNT(*) FROM registrations WHERE eventId = ? AND status = 'active') < (SELECT totalSeats FROM events WHERE id = ?)`,
+        [userName, eventId, new Date().toISOString(), eventId, eventId],
         function (err) {
           if (err) reject(err);
-          else resolve({ id: this.lastID });
-        }
-      );
-    }),
-
-  findActive: (userName, eventId) =>
-    new Promise((resolve, reject) => {
-      db.get(
-        `SELECT * FROM registrations 
-         WHERE userName=? AND eventId=? AND status='active'`,
-        [userName, eventId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
-    }),
-
-  countActiveByEvent: (eventId) =>
-    new Promise((resolve, reject) => {
-      db.get(
-        `SELECT COUNT(*) as count FROM registrations 
-         WHERE eventId=? AND status='active'`,
-        [eventId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row.count);
+          else resolve({ id: this.lastID, changes: this.changes });
         }
       );
     }),
@@ -54,6 +29,34 @@ const RegistrationModel = {
           } else {
             resolve(true);
           }
+        }
+      );
+    }),
+
+  findByUserAndEvent: (userName, eventId) =>
+    new Promise((resolve, reject) => {
+      db.get(
+        `SELECT * FROM registrations 
+         WHERE userName=? AND eventId=?`,
+        [userName, eventId],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    }),
+
+  activateAtomic: (userName, eventId) =>
+    new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE registrations 
+         SET status='active', createdAt=?
+         WHERE userName=? AND eventId=? AND status='cancelled'
+           AND (SELECT COUNT(*) FROM registrations WHERE eventId = ? AND status='active') < (SELECT totalSeats FROM events WHERE id = ?)`,
+        [new Date().toISOString(), userName, eventId, eventId, eventId],
+        function (err) {
+          if (err) reject(err);
+          else resolve({ changes: this.changes });
         }
       );
     }),
